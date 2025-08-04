@@ -96,6 +96,8 @@ const App = () => {
         body: formData,
       });
 
+      console.log("got it TTTTTTTTTtt");
+
       if (!response.ok) {
         const errData = await response.json();
         throw new Error(

@@ -1,0 +1,11 @@
+back-end:
+$ source venv/bin/activate
+
+$ pip install Flask Flask-Cors scikit-learn pandas numpy joblib
+
+$ python train_model.py
+
+$ python app.py
+
+front-end:
+npm run dev
