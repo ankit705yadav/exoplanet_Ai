@@ -1,5 +1,8 @@
 back-end:
 $ source venv/bin/activate
+for windows: 
+ python -m venv venv
+ source venv/Scripts/activate
 
 $ pip install Flask Flask-Cors scikit-learn pandas numpy joblib
 
@@ -8,4 +11,8 @@ $ python train_model.py
 $ python app.py
 
 front-end:
+npm install
 npm run dev
+
+when changing the dataset, make sure you change it in both train_model.py as well as app.py
+pip install matplotlib seaborn
