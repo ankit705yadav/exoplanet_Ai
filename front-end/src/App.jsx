@@ -19,6 +19,15 @@ const App = () => {
   });
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState("analysis");
+  const [selectedModel, setSelectedModel] = useState("RandomForest"); // State for model selection
+
+  const modelOptions = [
+    "RandomForest",
+    "LogisticRegression",
+    "SVM",
+    "DecisionTree",
+    "NaiveBayes",
+  ];
 
   const onDrop = useCallback((acceptedFiles) => {
     setFiles(acceptedFiles);
@@ -42,6 +51,11 @@ const App = () => {
 
     const formData = new FormData();
     formData.append("file", files[0]);
+
+    // If it's a prediction call, add the selected model name to the form data
+    if (type === "prediction") {
+      formData.append("model_name", selectedModel);
+    }
 
     try {
       const response = await fetch(`http://127.0.0.1:5000/${endpoint}`, {
@@ -112,33 +126,73 @@ const App = () => {
       <p className="text-gray-500">Analysis results will appear here.</p>
     );
 
-  const renderPredictionTab = () =>
-    predictionResult ? (
-      <div
-        className={`w-full p-4 rounded-lg text-center ${
-          predictionResult.isExoplanet ? "bg-green-900/50" : "bg-red-900/50"
-        }`}
-      >
-        <p
-          className={`text-3xl font-bold mb-2 ${
-            predictionResult.isExoplanet ? "text-green-300" : "text-red-300"
-          }`}
-        >
-          {predictionResult.result}
+  const renderPredictionTab = () => {
+    if (!predictionResult) {
+      return (
+        <p className="text-gray-500">
+          Prediction summary for all rows will appear here.
         </p>
-        <p className="text-gray-300 text-lg">
-          Confidence: {(predictionResult.confidence * 100).toFixed(0)}%
+      );
+    }
+
+    const {
+      model_used,
+      exoplanet_detected_count,
+      no_exoplanet_detected_count,
+      total_rows_predicted,
+    } = predictionResult;
+    const detected_percent =
+      total_rows_predicted > 0
+        ? (exoplanet_detected_count / total_rows_predicted) * 100
+        : 0;
+    const not_detected_percent =
+      total_rows_predicted > 0
+        ? (no_exoplanet_detected_count / total_rows_predicted) * 100
+        : 0;
+
+    return (
+      <div className="w-full text-center">
+        <h3 className="text-xl font-bold mb-2 text-gray-300">
+          Prediction Summary
+        </h3>
+        <p className="text-sm text-indigo-300 mb-4">Using {model_used} Model</p>
+        <p className="text-gray-400 mb-4">
+          Based on {total_rows_predicted.toLocaleString()} valid rows in the
+          file.
         </p>
+
+        <div className="space-y-3 text-left">
+          <div className="flex items-center">
+            <span className="w-40 text-green-300">Exoplanet Detected:</span>
+            <span className="font-mono text-lg">
+              {exoplanet_detected_count.toLocaleString()}
+            </span>
+          </div>
+          <div className="flex items-center">
+            <span className="w-40 text-red-300">No Exoplanet:</span>
+            <span className="font-mono text-lg">
+              {no_exoplanet_detected_count.toLocaleString()}
+            </span>
+          </div>
+        </div>
+
+        <div className="w-full bg-gray-700 rounded-full h-4 mt-6 flex overflow-hidden">
+          <div
+            className="bg-green-500 h-4"
+            style={{ width: `${detected_percent}%` }}
+          ></div>
+          <div
+            className="bg-red-500 h-4"
+            style={{ width: `${not_detected_percent}%` }}
+          ></div>
+        </div>
       </div>
-    ) : (
-      <p className="text-gray-500">
-        Prediction for the first valid row will appear here.
-      </p>
     );
+  };
 
   return (
     <div className="bg-gray-900 text-white font-sans flex items-center justify-center h-screen w-screen overflow-hidden">
-      <div className="max-w-4xl w-full bg-gray-800 rounded-2xl shadow-2xl p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
+      <div className="max-w-5xl w-full bg-gray-800 rounded-2xl shadow-2xl p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
         <div className="flex flex-col">
           <header className="mb-6">
             <h1 className="text-3xl font-bold text-cyan-400">
@@ -163,7 +217,31 @@ const App = () => {
               <p>Drop a CSV file here</p>
             )}
           </div>
-          <div className="grid grid-cols-2 gap-4 mt-6">
+
+          {/* --- UI for Model Selection --- */}
+          <div className="mt-6">
+            <label
+              htmlFor="model-select"
+              className="block text-sm font-medium text-gray-300 mb-2"
+            >
+              Select Prediction Model:
+            </label>
+            <select
+              id="model-select"
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              className="w-full bg-gray-700 border border-gray-600 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+            >
+              {modelOptions.map((model) => (
+                <option key={model} value={model}>
+                  {model}
+                </option>
+              ))}
+            </select>
+          </div>
+          {/* --- End UI for Model Selection --- */}
+
+          <div className="grid grid-cols-2 gap-4 mt-4">
             <button
               onClick={() => handleApiCall("analyze", "analysis")}
               disabled={isLoading.analysis || files.length === 0}
@@ -176,7 +254,7 @@ const App = () => {
               disabled={isLoading.prediction || files.length === 0}
               className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg transition-all disabled:bg-gray-500 disabled:cursor-not-allowed"
             >
-              {isLoading.prediction ? "Predicting..." : "Predict First Row"}
+              {isLoading.prediction ? "Predicting..." : "Predict All Rows"}
             </button>
           </div>
         </div>
