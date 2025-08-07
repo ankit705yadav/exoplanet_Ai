@@ -15,6 +15,8 @@ import {
   ScatterChart,
   Scatter,
   ZAxis,
+  LineChart,
+  Line,
 } from "recharts";
 
 const App = () => {
@@ -22,10 +24,12 @@ const App = () => {
   const [analysisResult, setAnalysisResult] = useState(null);
   const [predictionResult, setPredictionResult] = useState(null);
   const [visualizationResult, setVisualizationResult] = useState(null);
+  const [lightCurveResult, setLightCurveResult] = useState(null);
   const [isLoading, setIsLoading] = useState({
     analysis: false,
     prediction: false,
     visualization: false,
+    lightcurve: false,
   });
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState("analysis");
@@ -45,6 +49,7 @@ const App = () => {
     setAnalysisResult(null);
     setPredictionResult(null);
     setVisualizationResult(null);
+    setLightCurveResult(null);
   }, []);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -80,9 +85,11 @@ const App = () => {
       }
       const result = await response.json();
 
+      // Reset all results before setting the new one
       setAnalysisResult(null);
       setPredictionResult(null);
       setVisualizationResult(null);
+      setLightCurveResult(null);
 
       if (type === "analysis") {
         const chartData = Object.entries(result).map(([name, value]) => ({
@@ -97,6 +104,9 @@ const App = () => {
       } else if (type === "visualization") {
         setVisualizationResult(result);
         setActiveTab("visualization");
+      } else if (type === "lightcurve") {
+        setLightCurveResult(result);
+        setActiveTab("lightcurve");
       }
     } catch (e) {
       setError(e.message || "An error occurred.");
@@ -149,6 +159,7 @@ const App = () => {
       exoplanet_detected_count,
       no_exoplanet_detected_count,
       total_rows_predicted,
+      accuracy,
     } = predictionResult;
     const detected_percent =
       total_rows_predicted > 0
@@ -183,6 +194,16 @@ const App = () => {
             style={{ width: `${detected_percent}%` }}
           ></div>
         </div>
+        {accuracy !== null && (
+          <div className="mt-6 border-t border-gray-700 pt-4">
+            <h4 className="text-lg font-semibold text-gray-300">
+              Model Accuracy on this File
+            </h4>
+            <p className="text-4xl font-bold text-cyan-400 mt-2">
+              {(accuracy * 100).toFixed(2)}%
+            </p>
+          </div>
+        )}
       </div>
     );
   };
@@ -193,10 +214,10 @@ const App = () => {
         <p className="text-gray-500">Data visualizations will appear here.</p>
       );
     return (
-      <div className="w-full h-full grid grid-cols-1 grid-rows-2 gap-6">
+      <div className="w-full h-full grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="w-full">
           <h4 className="text-center text-gray-300 mb-2">
-            Planet Size Distribution (Radius in Earths)
+            Planet Size Distribution
           </h4>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart
@@ -242,12 +263,12 @@ const App = () => {
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <div className="w-full col-span-1 row-span-2">
+        <div className="w-full col-span-1 lg:col-span-2">
           <h4 className="text-center text-gray-300 mb-2">
-            Orbital Period vs. Planet Radius (Confirmed Planets)
+            Orbital Period vs. Planet Radius
           </h4>
-          <ResponsiveContainer width="100%" height="90%">
-            <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+          <ResponsiveContainer width="100%" height={300}>
+            <ScatterChart margin={{ top: 20, right: 30, bottom: 20, left: 20 }}>
               <CartesianGrid stroke="#4A5568" />
               <XAxis
                 type="number"
@@ -287,6 +308,80 @@ const App = () => {
                 shape="circle"
               />
             </ScatterChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    );
+  };
+
+  const renderLightCurveTab = () => {
+    if (!lightCurveResult)
+      return (
+        <p className="text-gray-500">
+          Light curve visualizations will appear here.
+        </p>
+      );
+    return (
+      <div className="w-full h-full grid grid-cols-1 grid-rows-2 gap-4">
+        <div>
+          <h4 className="text-center text-gray-300 mb-2">
+            Light Curve (Brightness vs. Time)
+          </h4>
+          <ResponsiveContainer width="100%" height={250}>
+            <LineChart
+              data={lightCurveResult.light_curve}
+              margin={{ top: 5, right: 20, left: -10, bottom: 20 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" />
+              <XAxis
+                type="number"
+                dataKey="time"
+                domain={["dataMin", "dataMax"]}
+                tick={{ fill: "#A0AEC0", fontSize: 10 }}
+                label={{
+                  value: "Time",
+                  position: "insideBottom",
+                  offset: -15,
+                  fill: "#A0AEC0",
+                }}
+              />
+              <YAxis
+                dataKey="flux"
+                domain={["dataMin - 0.001", "dataMax + 0.001"]}
+                tick={{ fill: "#A0AEC0", fontSize: 10 }}
+              />
+              <Tooltip contentStyle={{ backgroundColor: "#1A202C" }} />
+              <Line
+                type="monotone"
+                dataKey="flux"
+                stroke="#2DD4BF"
+                strokeWidth={1.5}
+                dot={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+        <div>
+          <h4 className="text-center text-gray-300 mb-2">
+            Fourier Transform (Signal Strength vs. Frequency)
+          </h4>
+          <ResponsiveContainer width="100%" height={250}>
+            <BarChart data={lightCurveResult.fourier_transform}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" />
+              <XAxis
+                dataKey="frequency"
+                tick={{ fill: "#A0AEC0", fontSize: 10 }}
+                label={{
+                  value: "Frequency",
+                  position: "insideBottom",
+                  offset: -15,
+                  fill: "#A0AEC0",
+                }}
+              />
+              <YAxis tick={{ fill: "#A0AEC0", fontSize: 10 }} />
+              <Tooltip contentStyle={{ backgroundColor: "#1A202C" }} />
+              <Bar dataKey="amplitude" fill="#8884d8" />
+            </BarChart>
           </ResponsiveContainer>
         </div>
       </div>
@@ -360,7 +455,14 @@ const App = () => {
               disabled={isLoading.visualization || files.length === 0}
               className="w-full bg-teal-600 hover:bg-teal-700 font-bold py-3 px-4 rounded-lg disabled:bg-gray-500"
             >
-              Visualize Data
+              Visualize Summary
+            </button>
+            <button
+              onClick={() => handleApiCall("lightcurve", "lightcurve")}
+              disabled={isLoading.lightcurve || files.length === 0}
+              className="w-full bg-purple-600 hover:bg-purple-700 font-bold py-3 px-4 rounded-lg disabled:bg-gray-500"
+            >
+              Visualize Light Curve
             </button>
           </div>
         </div>
@@ -394,7 +496,17 @@ const App = () => {
                   : "text-gray-400"
               }`}
             >
-              Visualization
+              Summary
+            </button>
+            <button
+              onClick={() => setActiveTab("lightcurve")}
+              className={`py-2 px-4 text-lg ${
+                activeTab === "lightcurve"
+                  ? "text-cyan-400 border-b-2 border-cyan-400"
+                  : "text-gray-400"
+              }`}
+            >
+              Light Curve
             </button>
           </div>
           <div className="flex-grow flex items-center justify-center p-4">
@@ -404,8 +516,10 @@ const App = () => {
               renderAnalysisTab()
             ) : activeTab === "prediction" ? (
               renderPredictionTab()
-            ) : (
+            ) : activeTab === "visualization" ? (
               renderVisualizationTab()
+            ) : (
+              renderLightCurveTab()
             )}
           </div>
         </div>
