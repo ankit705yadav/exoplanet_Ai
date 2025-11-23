@@ -68,7 +68,7 @@ const App = () => {
     const formData = new FormData();
     formData.append("file", files[0]);
 
-    if (type === "prediction" || type === "analysis") {
+    if (type === "prediction" || type === "analysis" || type === "visualization") {
       formData.append("model_name", selectedModel);
     }
 
@@ -276,8 +276,18 @@ const App = () => {
       return (
         <p className="text-gray-500">Data visualizations will appear here.</p>
       );
+    const { model_used, total_predicted_exoplanets } = visualizationResult;
     return (
-      <div className="w-full h-full grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="w-full h-full">
+        <div className="text-center mb-4">
+          <h3 className="text-lg font-bold text-gray-300">
+            Visualization using {model_used} Model
+          </h3>
+          <p className="text-sm text-teal-400">
+            {total_predicted_exoplanets?.toLocaleString()} predicted exoplanets
+          </p>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="w-full">
           <h4 className="text-center text-gray-300 mb-2">
             Planet Size Distribution
@@ -365,13 +375,14 @@ const App = () => {
                 contentStyle={{ backgroundColor: "#1A202C" }}
               />
               <Scatter
-                name="Confirmed Planets"
+                name="Predicted Exoplanets"
                 data={visualizationResult.period_vs_radius}
                 fill="#0088FE"
                 shape="circle"
               />
             </ScatterChart>
           </ResponsiveContainer>
+        </div>
         </div>
       </div>
     );

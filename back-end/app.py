@@ -142,26 +142,60 @@ def predict():
 
 @app.route('/visualize', methods=['POST'])
 def visualize_data():
-    # This function remains unchanged
     print("\n--- Received new visualization request ---")
+    if not models or not scaler: return jsonify({'error': 'Server not ready.'}), 503
+
+    model_name = request.form.get('model_name', 'RandomForest')
+    model = models.get(model_name)
+    if not model: return jsonify({'error': f"Model '{model_name}' not found."}), 404
+
     file = request.files.get('file')
     if not file: return jsonify({'error': 'No file provided'}), 400
     try:
         df = pd.read_csv(io.StringIO(file.stream.read().decode("UTF8")))
-        df.dropna(subset=['koi_prad', 'koi_period', 'koi_steff', 'koi_disposition'], inplace=True)
+
+        # Required columns for visualization
+        viz_cols = ['koi_prad', 'koi_period', 'koi_steff']
+        required_features = ['koi_period', 'koi_duration', 'koi_depth', 'koi_insol', 'koi_prad']
+        all_required = list(set(viz_cols + required_features))
+
+        df_clean = df.dropna(subset=all_required).copy()
+        if df_clean.empty:
+            return jsonify({'error': 'No valid rows after cleaning.'}), 400
+
+        # Make predictions using selected model
+        features_data = df_clean[required_features]
+        scaled_features = scaler.transform(features_data)
+        predictions = model.predict(scaled_features)
+        df_clean['prediction'] = predictions  # 1 = CONFIRMED, 0 = FALSE POSITIVE
+
+        # Planet size distribution (for predicted exoplanets)
         prad_bins = [0, 2, 6, 15, 30, 100, 2500]
         prad_labels = ['<2 (Earths)', '2-6 (Super-Earths)', '6-15 (Neptunes)', '15-30 (Jupiters)', '30-100 (Giants)', '>100 (Stars/Errors)']
-        df['prad_category'] = pd.cut(df['koi_prad'], bins=prad_bins, labels=prad_labels, right=False)
-        radius_dist = df['prad_category'].value_counts().sort_index().to_dict()
+        predicted_exoplanets = df_clean[df_clean['prediction'] == 1]
+        predicted_exoplanets = predicted_exoplanets.copy()
+        predicted_exoplanets['prad_category'] = pd.cut(predicted_exoplanets['koi_prad'], bins=prad_bins, labels=prad_labels, right=False)
+        radius_dist = predicted_exoplanets['prad_category'].value_counts().sort_index().to_dict()
         radius_dist_data = [{'name': k, 'count': v} for k, v in radius_dist.items()]
-        scatter_df = df[df['koi_disposition'] == 'CONFIRMED'].sample(n=min(500, len(df)), random_state=42)
+
+        # Scatter plot for model-predicted exoplanets
+        scatter_df = predicted_exoplanets.sample(n=min(500, len(predicted_exoplanets)), random_state=42) if len(predicted_exoplanets) > 0 else predicted_exoplanets
         scatter_data = scatter_df[['koi_period', 'koi_prad']].rename(columns={'koi_period': 'period', 'koi_prad': 'radius'}).to_dict('records')
+
+        # Star temperature distribution (for predicted exoplanets)
         steff_bins = [0, 3700, 5200, 6000, 7500, 10000, 50000]
         steff_labels = ['<3.7K (M-type)', '3.7-5.2K (K-type)', '5.2-6K (G-type)', '6-7.5K (F-type)', '7.5-10K (A-type)', '>10K (B/O-type)']
-        df['steff_category'] = pd.cut(df['koi_steff'], bins=steff_bins, labels=steff_labels, right=False)
-        steff_dist = df['steff_category'].value_counts().sort_index().to_dict()
+        predicted_exoplanets['steff_category'] = pd.cut(predicted_exoplanets['koi_steff'], bins=steff_bins, labels=steff_labels, right=False)
+        steff_dist = predicted_exoplanets['steff_category'].value_counts().sort_index().to_dict()
         steff_dist_data = [{'name': k, 'count': v} for k, v in steff_dist.items()]
-        visualization_result = {'radius_distribution': radius_dist_data, 'period_vs_radius': scatter_data, 'star_temp_distribution': steff_dist_data}
+
+        visualization_result = {
+            'model_used': model_name,
+            'total_predicted_exoplanets': int(np.sum(predictions)),
+            'radius_distribution': radius_dist_data,
+            'period_vs_radius': scatter_data,
+            'star_temp_distribution': steff_dist_data
+        }
         return jsonify(visualization_result)
     except Exception as e: return jsonify({'error': f'Visualization error: {str(e)}'}), 500
 
