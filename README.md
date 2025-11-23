@@ -126,9 +126,14 @@ Target column: `koi_disposition` (CONFIRMED, FALSE POSITIVE, CANDIDATE)
 ```
 exoplanet_Ai/
 ├── back-end/
-│   ├── app.py              # Flask API server
-│   ├── requirements.txt    # Python dependencies
-│   └── models/             # Trained ML models (.pkl files)
+│   ├── app.py                      # Flask API server
+│   ├── requirements.txt            # Python dependencies
+│   ├── scaler.pkl                  # Feature scaler
+│   ├── RandomForest_model.pkl      # Random Forest model
+│   ├── LogisticRegression_model.pkl
+│   ├── SVM_model.pkl
+│   ├── DecisionTree_model.pkl
+│   └── NaiveBayes_model.pkl
 │
 ├── front-end/
 │   ├── src/
