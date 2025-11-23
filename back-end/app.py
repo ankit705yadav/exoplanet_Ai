@@ -5,7 +5,7 @@ import pandas as pd
 import joblib
 import io
 import numpy as np
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -71,19 +71,26 @@ def analyze_disposition():
             'FALSE POSITIVE': round((no_exoplanet_count / total) * 100, 2) if total > 0 else 0
         }
 
-        # Calculate accuracy if ground truth available
-        accuracy = None
+        # Calculate metrics if ground truth available
+        metrics = None
         if 'koi_disposition' in df.columns:
             true_labels = (df.loc[valid_indices, 'koi_disposition'] == 'CONFIRMED').astype(int)
-            from sklearn.metrics import accuracy_score
-            accuracy = round(accuracy_score(true_labels, predictions) * 100, 2)
+            cm = confusion_matrix(true_labels, predictions)
+            tn, fp, fn, tp = cm.ravel() if cm.size == 4 else (0, 0, 0, 0)
+            metrics = {
+                'accuracy': round(accuracy_score(true_labels, predictions) * 100, 2),
+                'precision': round(precision_score(true_labels, predictions, zero_division=0) * 100, 2),
+                'recall': round(recall_score(true_labels, predictions, zero_division=0) * 100, 2),
+                'f1': round(f1_score(true_labels, predictions, zero_division=0) * 100, 2),
+                'confusion_matrix': {'tp': int(tp), 'tn': int(tn), 'fp': int(fp), 'fn': int(fn)}
+            }
 
         return jsonify({
             'model_used': model_name,
             'raw_distribution': raw_distribution,
             'model_distribution': model_distribution,
             'total_analyzed': total,
-            'accuracy': accuracy
+            'metrics': metrics
         })
     except Exception as e: return jsonify({'error': f'Analysis error: {str(e)}'}), 500
 
@@ -122,12 +129,19 @@ def predict():
         scaled_features = scaler.transform(features_data)
         all_predictions = model.predict(scaled_features)
         
-        # --- NEW: Calculate accuracy if possible ---
-        accuracy = None
+        # Calculate metrics if ground truth available
+        metrics = None
         if true_labels is not None and len(all_predictions) == len(true_labels):
-            accuracy = accuracy_score(true_labels, all_predictions)
-            print(f"[+] Calculated accuracy: {accuracy:.4f}")
-        # -----------------------------------------
+            cm = confusion_matrix(true_labels, all_predictions)
+            tn, fp, fn, tp = cm.ravel() if cm.size == 4 else (0, 0, 0, 0)
+            metrics = {
+                'accuracy': round(accuracy_score(true_labels, all_predictions) * 100, 2),
+                'precision': round(precision_score(true_labels, all_predictions, zero_division=0) * 100, 2),
+                'recall': round(recall_score(true_labels, all_predictions, zero_division=0) * 100, 2),
+                'f1': round(f1_score(true_labels, all_predictions, zero_division=0) * 100, 2),
+                'confusion_matrix': {'tp': int(tp), 'tn': int(tn), 'fp': int(fp), 'fn': int(fn)}
+            }
+            print(f"[+] Calculated accuracy: {metrics['accuracy']:.2f}%")
 
         exoplanet_count = int(np.sum(all_predictions))
         result = {
@@ -135,7 +149,7 @@ def predict():
             'exoplanet_detected_count': exoplanet_count,
             'no_exoplanet_detected_count': len(all_predictions) - exoplanet_count,
             'total_rows_predicted': len(all_predictions),
-            'accuracy': accuracy # This will be null if no labels were provided
+            'metrics': metrics
         }
         return jsonify(result)
     except Exception as e: return jsonify({'error': f'Prediction error: {str(e)}'}), 500
@@ -226,6 +240,93 @@ def analyze_light_curve():
         fourier_data_sampled = fourier_data[::fourier_sample_rate]
         return jsonify({'light_curve': light_curve_data, 'fourier_transform': fourier_data_sampled})
     except Exception as e: return jsonify({'error': f'Light curve analysis error: {str(e)}'}), 500
+
+@app.route('/download', methods=['POST'])
+def download_predictions():
+    print("\n--- Received download predictions request ---")
+    if not models or not scaler: return jsonify({'error': 'Server not ready.'}), 503
+
+    model_name = request.form.get('model_name', 'RandomForest')
+    model = models.get(model_name)
+    if not model: return jsonify({'error': f"Model '{model_name}' not found."}), 404
+
+    file = request.files.get('file')
+    if not file: return jsonify({'error': 'No file provided'}), 400
+    try:
+        df = pd.read_csv(io.StringIO(file.stream.read().decode("UTF8")))
+
+        required_features = ['koi_period', 'koi_duration', 'koi_depth', 'koi_insol', 'koi_prad']
+        valid_indices = df.dropna(subset=required_features).index
+
+        # Make predictions
+        features_data = df.loc[valid_indices, required_features]
+        scaled_features = scaler.transform(features_data)
+        predictions = model.predict(scaled_features)
+
+        # Add prediction column
+        df['prediction'] = None
+        df.loc[valid_indices, 'prediction'] = ['CONFIRMED' if p == 1 else 'FALSE POSITIVE' for p in predictions]
+
+        # Return CSV as text
+        csv_output = df.to_csv(index=False)
+        return csv_output, 200, {'Content-Type': 'text/csv', 'Content-Disposition': f'attachment; filename=predictions_{model_name}.csv'}
+    except Exception as e: return jsonify({'error': f'Download error: {str(e)}'}), 500
+
+@app.route('/compare', methods=['POST'])
+def compare_models():
+    print("\n--- Received model comparison request ---")
+    if not models or not scaler: return jsonify({'error': 'Server not ready.'}), 503
+
+    file = request.files.get('file')
+    if not file: return jsonify({'error': 'No file provided'}), 400
+    try:
+        df = pd.read_csv(io.StringIO(file.stream.read().decode("UTF8")))
+
+        required_features = ['koi_period', 'koi_duration', 'koi_depth', 'koi_insol', 'koi_prad']
+        valid_indices = df.dropna(subset=required_features).index
+
+        if valid_indices.empty:
+            return jsonify({'error': 'No valid rows for prediction.'}), 400
+
+        features_data = df.loc[valid_indices, required_features]
+        scaled_features = scaler.transform(features_data)
+
+        # Check for ground truth
+        true_labels = None
+        if 'koi_disposition' in df.columns:
+            true_labels = (df.loc[valid_indices, 'koi_disposition'] == 'CONFIRMED').astype(int)
+
+        results = []
+        for model_name, model in models.items():
+            predictions = model.predict(scaled_features)
+            exoplanet_count = int(np.sum(predictions))
+
+            model_result = {
+                'model': model_name,
+                'exoplanets': exoplanet_count,
+                'false_positives': len(predictions) - exoplanet_count
+            }
+
+            if true_labels is not None:
+                cm = confusion_matrix(true_labels, predictions)
+                tn, fp, fn, tp = cm.ravel() if cm.size == 4 else (0, 0, 0, 0)
+                model_result['accuracy'] = round(accuracy_score(true_labels, predictions) * 100, 2)
+                model_result['precision'] = round(precision_score(true_labels, predictions, zero_division=0) * 100, 2)
+                model_result['recall'] = round(recall_score(true_labels, predictions, zero_division=0) * 100, 2)
+                model_result['f1'] = round(f1_score(true_labels, predictions, zero_division=0) * 100, 2)
+
+            results.append(model_result)
+
+        # Sort by accuracy if available
+        if true_labels is not None:
+            results.sort(key=lambda x: x.get('accuracy', 0), reverse=True)
+
+        return jsonify({
+            'total_rows': len(predictions),
+            'has_ground_truth': true_labels is not None,
+            'results': results
+        })
+    except Exception as e: return jsonify({'error': f'Comparison error: {str(e)}'}), 500
 
 if __name__ == '__main__':
     print("Starting Flask server with all endpoints...")

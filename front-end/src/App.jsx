@@ -25,11 +25,13 @@ const App = () => {
   const [predictionResult, setPredictionResult] = useState(null);
   const [visualizationResult, setVisualizationResult] = useState(null);
   const [lightCurveResult, setLightCurveResult] = useState(null);
+  const [comparisonResult, setComparisonResult] = useState(null);
   const [isLoading, setIsLoading] = useState({
     analysis: false,
     prediction: false,
     visualization: false,
     lightcurve: false,
+    comparison: false,
   });
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState("analysis");
@@ -50,12 +52,36 @@ const App = () => {
     setPredictionResult(null);
     setVisualizationResult(null);
     setLightCurveResult(null);
+    setComparisonResult(null);
   }, []);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: { "text/csv": [".csv"] },
   });
+
+  const handleDownload = async () => {
+    if (files.length === 0) return;
+    const formData = new FormData();
+    formData.append("file", files[0]);
+    formData.append("model_name", selectedModel);
+    try {
+      const response = await fetch("http://127.0.0.1:5000/download", {
+        method: "POST",
+        body: formData,
+      });
+      if (!response.ok) throw new Error("Download failed");
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `predictions_${selectedModel}.csv`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      setError("Download failed: " + e.message);
+    }
+  };
 
   const handleApiCall = async (endpoint, type) => {
     if (files.length === 0) {
@@ -90,6 +116,7 @@ const App = () => {
       setPredictionResult(null);
       setVisualizationResult(null);
       setLightCurveResult(null);
+      setComparisonResult(null);
 
       if (type === "analysis") {
         setAnalysisResult(result);
@@ -103,6 +130,9 @@ const App = () => {
       } else if (type === "lightcurve") {
         setLightCurveResult(result);
         setActiveTab("lightcurve");
+      } else if (type === "comparison") {
+        setComparisonResult(result);
+        setActiveTab("comparison");
       }
     } catch (e) {
       setError(e.message || "An error occurred.");
@@ -122,7 +152,7 @@ const App = () => {
       return <p className="text-gray-500">Analysis results will appear here.</p>;
     }
 
-    const { model_used, raw_distribution, model_distribution, total_analyzed, accuracy } = analysisResult;
+    const { model_used, raw_distribution, model_distribution, total_analyzed, metrics } = analysisResult;
 
     const rawChartData = Object.entries(raw_distribution || {}).map(([name, value]) => ({
       name,
@@ -202,10 +232,27 @@ const App = () => {
             </ResponsiveContainer>
           </div>
         </div>
-        {accuracy !== null && (
-          <div className="mt-4 text-center border-t border-gray-700 pt-4">
-            <h4 className="text-lg font-semibold text-gray-300">Model Accuracy</h4>
-            <p className="text-3xl font-bold text-cyan-400 mt-1">{accuracy}%</p>
+        {metrics && (
+          <div className="mt-4 border-t border-gray-700 pt-4">
+            <h4 className="text-lg font-semibold text-gray-300 text-center mb-3">Model Performance</h4>
+            <div className="grid grid-cols-4 gap-2 text-center">
+              <div className="bg-gray-700 rounded p-2">
+                <p className="text-xs text-gray-400">Accuracy</p>
+                <p className="text-lg font-bold text-cyan-400">{metrics.accuracy}%</p>
+              </div>
+              <div className="bg-gray-700 rounded p-2">
+                <p className="text-xs text-gray-400">Precision</p>
+                <p className="text-lg font-bold text-green-400">{metrics.precision}%</p>
+              </div>
+              <div className="bg-gray-700 rounded p-2">
+                <p className="text-xs text-gray-400">Recall</p>
+                <p className="text-lg font-bold text-yellow-400">{metrics.recall}%</p>
+              </div>
+              <div className="bg-gray-700 rounded p-2">
+                <p className="text-xs text-gray-400">F1 Score</p>
+                <p className="text-lg font-bold text-purple-400">{metrics.f1}%</p>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -222,7 +269,7 @@ const App = () => {
       exoplanet_detected_count,
       no_exoplanet_detected_count,
       total_rows_predicted,
-      accuracy,
+      metrics,
     } = predictionResult;
     const detected_percent =
       total_rows_predicted > 0
@@ -257,16 +304,56 @@ const App = () => {
             style={{ width: `${detected_percent}%` }}
           ></div>
         </div>
-        {accuracy !== null && (
+        {metrics && (
           <div className="mt-6 border-t border-gray-700 pt-4">
-            <h4 className="text-lg font-semibold text-gray-300">
-              Model Accuracy on this File
-            </h4>
-            <p className="text-4xl font-bold text-cyan-400 mt-2">
-              {(accuracy * 100).toFixed(2)}%
-            </p>
+            <div className="grid grid-cols-4 gap-2 text-center mb-4">
+              <div className="bg-gray-700 rounded p-2">
+                <p className="text-xs text-gray-400">Accuracy</p>
+                <p className="text-lg font-bold text-cyan-400">{metrics.accuracy}%</p>
+              </div>
+              <div className="bg-gray-700 rounded p-2">
+                <p className="text-xs text-gray-400">Precision</p>
+                <p className="text-lg font-bold text-green-400">{metrics.precision}%</p>
+              </div>
+              <div className="bg-gray-700 rounded p-2">
+                <p className="text-xs text-gray-400">Recall</p>
+                <p className="text-lg font-bold text-yellow-400">{metrics.recall}%</p>
+              </div>
+              <div className="bg-gray-700 rounded p-2">
+                <p className="text-xs text-gray-400">F1 Score</p>
+                <p className="text-lg font-bold text-purple-400">{metrics.f1}%</p>
+              </div>
+            </div>
+            <h4 className="text-sm font-semibold text-gray-400 mb-2">Confusion Matrix</h4>
+            <div className="grid grid-cols-2 gap-1 max-w-xs mx-auto text-sm">
+              <div className="bg-green-900 p-2 rounded">
+                <p className="text-gray-400 text-xs">True Positive</p>
+                <p className="text-green-300 font-bold">{metrics.confusion_matrix.tp}</p>
+              </div>
+              <div className="bg-red-900 p-2 rounded">
+                <p className="text-gray-400 text-xs">False Positive</p>
+                <p className="text-red-300 font-bold">{metrics.confusion_matrix.fp}</p>
+              </div>
+              <div className="bg-yellow-900 p-2 rounded">
+                <p className="text-gray-400 text-xs">False Negative</p>
+                <p className="text-yellow-300 font-bold">{metrics.confusion_matrix.fn}</p>
+              </div>
+              <div className="bg-blue-900 p-2 rounded">
+                <p className="text-gray-400 text-xs">True Negative</p>
+                <p className="text-blue-300 font-bold">{metrics.confusion_matrix.tn}</p>
+              </div>
+            </div>
           </div>
         )}
+        <button
+          onClick={handleDownload}
+          className="mt-4 w-full bg-gray-600 hover:bg-gray-500 py-2 px-4 rounded-lg text-sm flex items-center justify-center gap-2"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          Download Predictions CSV
+        </button>
       </div>
     );
   };
@@ -388,6 +475,71 @@ const App = () => {
     );
   };
 
+  const renderComparisonTab = () => {
+    if (!comparisonResult)
+      return <p className="text-gray-500">Model comparison will appear here.</p>;
+
+    const { total_rows, has_ground_truth, results } = comparisonResult;
+    return (
+      <div className="w-full">
+        <h3 className="text-lg font-bold text-gray-300 text-center mb-2">
+          Model Comparison
+        </h3>
+        <p className="text-gray-400 text-center text-sm mb-4">
+          {total_rows.toLocaleString()} rows analyzed
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-600">
+                <th className="text-left p-2 text-gray-400">Model</th>
+                <th className="text-right p-2 text-gray-400">Exoplanets</th>
+                {has_ground_truth && (
+                  <>
+                    <th className="text-right p-2 text-gray-400">Accuracy</th>
+                    <th className="text-right p-2 text-gray-400">Precision</th>
+                    <th className="text-right p-2 text-gray-400">Recall</th>
+                    <th className="text-right p-2 text-gray-400">F1</th>
+                  </>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {results.map((r, i) => (
+                <tr key={r.model} className={`border-b border-gray-700 ${i === 0 && has_ground_truth ? 'bg-green-900/30' : ''}`}>
+                  <td className="p-2 font-medium text-gray-200">
+                    {r.model}
+                    {i === 0 && has_ground_truth && <span className="ml-2 text-xs text-green-400">Best</span>}
+                  </td>
+                  <td className="text-right p-2 text-cyan-400">{r.exoplanets.toLocaleString()}</td>
+                  {has_ground_truth && (
+                    <>
+                      <td className="text-right p-2 text-cyan-400">{r.accuracy}%</td>
+                      <td className="text-right p-2 text-green-400">{r.precision}%</td>
+                      <td className="text-right p-2 text-yellow-400">{r.recall}%</td>
+                      <td className="text-right p-2 text-purple-400">{r.f1}%</td>
+                    </>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {has_ground_truth && (
+          <ResponsiveContainer width="100%" height={200} className="mt-4">
+            <BarChart data={results} layout="vertical">
+              <CartesianGrid strokeDasharray="3 3" stroke="#4A5568" />
+              <XAxis type="number" domain={[0, 100]} tick={{ fill: "#A0AEC0", fontSize: 10 }} />
+              <YAxis type="category" dataKey="model" tick={{ fill: "#A0AEC0", fontSize: 10 }} width={100} />
+              <Tooltip contentStyle={{ backgroundColor: "#1A202C" }} />
+              <Bar dataKey="accuracy" fill="#00C49F" name="Accuracy %" />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+    );
+  };
+
   const renderLightCurveTab = () => {
     if (!lightCurveResult)
       return (
@@ -476,7 +628,7 @@ const App = () => {
           </header>
           <div
             {...getRootProps()}
-            className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
+            className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
               isDragActive
                 ? "border-cyan-400 bg-gray-700"
                 : "border-gray-600 hover:border-cyan-500"
@@ -484,9 +636,17 @@ const App = () => {
           >
             <input {...getInputProps()} />
             {files.length > 0 ? (
-              <p className="text-green-400">{files[0].name}</p>
+              <div>
+                <p className="text-green-400 font-medium">{files[0].name}</p>
+                <p className="text-gray-400 text-sm mt-1">
+                  Size: {(files[0].size / 1024).toFixed(1)} KB
+                </p>
+              </div>
             ) : (
-              <p>Drop a CSV file here</p>
+              <div>
+                <p className="text-gray-300">Drop a CSV file here</p>
+                <p className="text-gray-500 text-sm mt-1">or click to browse</p>
+              </div>
             )}
           </div>
           <div className="mt-4">
@@ -513,30 +673,42 @@ const App = () => {
             <button
               onClick={() => handleApiCall("analyze", "analysis")}
               disabled={isLoading.analysis || files.length === 0}
-              className="w-full bg-cyan-600 hover:bg-cyan-700 font-bold py-3 px-4 rounded-lg disabled:bg-gray-500"
+              className="w-full bg-cyan-600 hover:bg-cyan-700 font-bold py-3 px-4 rounded-lg disabled:bg-gray-500 flex items-center justify-center gap-2"
             >
-              Analyze Dataset
+              {isLoading.analysis && <span className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></span>}
+              {isLoading.analysis ? "Analyzing..." : "Analyze Dataset"}
             </button>
             <button
               onClick={() => handleApiCall("predict", "prediction")}
               disabled={isLoading.prediction || files.length === 0}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 font-bold py-3 px-4 rounded-lg disabled:bg-gray-500"
+              className="w-full bg-indigo-600 hover:bg-indigo-700 font-bold py-3 px-4 rounded-lg disabled:bg-gray-500 flex items-center justify-center gap-2"
             >
-              Predict All Rows
+              {isLoading.prediction && <span className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></span>}
+              {isLoading.prediction ? "Predicting..." : "Predict All Rows"}
             </button>
             <button
               onClick={() => handleApiCall("visualize", "visualization")}
               disabled={isLoading.visualization || files.length === 0}
-              className="w-full bg-teal-600 hover:bg-teal-700 font-bold py-3 px-4 rounded-lg disabled:bg-gray-500"
+              className="w-full bg-teal-600 hover:bg-teal-700 font-bold py-3 px-4 rounded-lg disabled:bg-gray-500 flex items-center justify-center gap-2"
             >
-              Visualize Summary
+              {isLoading.visualization && <span className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></span>}
+              {isLoading.visualization ? "Visualizing..." : "Visualize Summary"}
             </button>
             <button
               onClick={() => handleApiCall("lightcurve", "lightcurve")}
               disabled={isLoading.lightcurve || files.length === 0}
-              className="w-full bg-purple-600 hover:bg-purple-700 font-bold py-3 px-4 rounded-lg disabled:bg-gray-500"
+              className="w-full bg-purple-600 hover:bg-purple-700 font-bold py-3 px-4 rounded-lg disabled:bg-gray-500 flex items-center justify-center gap-2"
             >
-              Visualize Light Curve
+              {isLoading.lightcurve && <span className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></span>}
+              {isLoading.lightcurve ? "Processing..." : "Visualize Light Curve"}
+            </button>
+            <button
+              onClick={() => handleApiCall("compare", "comparison")}
+              disabled={isLoading.comparison || files.length === 0}
+              className="w-full bg-orange-600 hover:bg-orange-700 font-bold py-3 px-4 rounded-lg disabled:bg-gray-500 flex items-center justify-center gap-2"
+            >
+              {isLoading.comparison && <span className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full"></span>}
+              {isLoading.comparison ? "Comparing..." : "Compare All Models"}
             </button>
           </div>
         </div>
@@ -582,6 +754,16 @@ const App = () => {
             >
               Light Curve
             </button>
+            <button
+              onClick={() => setActiveTab("comparison")}
+              className={`py-2 px-4 text-lg ${
+                activeTab === "comparison"
+                  ? "text-cyan-400 border-b-2 border-cyan-400"
+                  : "text-gray-400"
+              }`}
+            >
+              Compare
+            </button>
           </div>
           <div className="flex-grow flex items-center justify-center p-4">
             {error ? (
@@ -592,8 +774,10 @@ const App = () => {
               renderPredictionTab()
             ) : activeTab === "visualization" ? (
               renderVisualizationTab()
-            ) : (
+            ) : activeTab === "lightcurve" ? (
               renderLightCurveTab()
+            ) : (
+              renderComparisonTab()
             )}
           </div>
         </div>
