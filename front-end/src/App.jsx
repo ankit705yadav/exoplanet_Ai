@@ -68,7 +68,7 @@ const App = () => {
     const formData = new FormData();
     formData.append("file", files[0]);
 
-    if (type === "prediction") {
+    if (type === "prediction" || type === "analysis") {
       formData.append("model_name", selectedModel);
     }
 
@@ -92,11 +92,7 @@ const App = () => {
       setLightCurveResult(null);
 
       if (type === "analysis") {
-        const chartData = Object.entries(result).map(([name, value]) => ({
-          name,
-          value,
-        }));
-        setAnalysisResult(chartData);
+        setAnalysisResult(result);
         setActiveTab("analysis");
       } else if (type === "prediction") {
         setPredictionResult(result);
@@ -121,33 +117,100 @@ const App = () => {
     "FALSE POSITIVE": "#FF8042",
   };
 
-  const renderAnalysisTab = () =>
-    analysisResult ? (
-      <ResponsiveContainer width="100%" height={300}>
-        <PieChart>
-          <Pie
-            data={analysisResult}
-            cx="50%"
-            cy="50%"
-            labelLine={false}
-            outerRadius={100}
-            fill="#8884d8"
-            dataKey="value"
-            label={({ name, percent }) =>
-              `${name} ${(percent * 100).toFixed(0)}%`
-            }
-          >
-            {analysisResult.map((entry, index) => (
-              <Cell key={`cell-${index}`} fill={COLORS[entry.name]} />
-            ))}
-          </Pie>
-          <Tooltip formatter={(value) => `${value.toFixed(2)}%`} />
-          <Legend />
-        </PieChart>
-      </ResponsiveContainer>
-    ) : (
-      <p className="text-gray-500">Analysis results will appear here.</p>
+  const renderAnalysisTab = () => {
+    if (!analysisResult) {
+      return <p className="text-gray-500">Analysis results will appear here.</p>;
+    }
+
+    const { model_used, raw_distribution, model_distribution, total_analyzed, accuracy } = analysisResult;
+
+    const rawChartData = Object.entries(raw_distribution || {}).map(([name, value]) => ({
+      name,
+      value,
+    }));
+
+    const modelChartData = Object.entries(model_distribution || {}).map(([name, value]) => ({
+      name,
+      value,
+    }));
+
+    return (
+      <div className="w-full">
+        <h3 className="text-xl font-bold mb-2 text-gray-300 text-center">
+          Analysis using {model_used} Model
+        </h3>
+        <p className="text-gray-400 text-center mb-4">
+          {total_analyzed.toLocaleString()} rows analyzed
+        </p>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {rawChartData.length > 0 && (
+            <div>
+              <h4 className="text-center text-gray-400 text-sm mb-2">Raw Dataset Distribution</h4>
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart>
+                  <Pie
+                    data={rawChartData}
+                    cx="50%"
+                    cy="40%"
+                    outerRadius={50}
+                    innerRadius={25}
+                    dataKey="value"
+                    paddingAngle={2}
+                  >
+                    {rawChartData.map((entry, index) => (
+                      <Cell key={`cell-raw-${index}`} fill={COLORS[entry.name] || "#8884d8"} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value) => `${value.toFixed(2)}%`} />
+                  <Legend
+                    layout="horizontal"
+                    verticalAlign="bottom"
+                    align="center"
+                    wrapperStyle={{ fontSize: '11px' }}
+                    formatter={(value, entry) => `${value}: ${entry.payload.value}%`}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+          <div>
+            <h4 className="text-center text-gray-400 text-sm mb-2">Model Predictions</h4>
+            <ResponsiveContainer width="100%" height={220}>
+              <PieChart>
+                <Pie
+                  data={modelChartData}
+                  cx="50%"
+                  cy="40%"
+                  outerRadius={50}
+                  innerRadius={25}
+                  dataKey="value"
+                  paddingAngle={2}
+                >
+                  {modelChartData.map((entry, index) => (
+                    <Cell key={`cell-model-${index}`} fill={COLORS[entry.name] || "#8884d8"} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(value) => `${value.toFixed(2)}%`} />
+                <Legend
+                  layout="horizontal"
+                  verticalAlign="bottom"
+                  align="center"
+                  wrapperStyle={{ fontSize: '11px' }}
+                  formatter={(value, entry) => `${value}: ${entry.payload.value}%`}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+        {accuracy !== null && (
+          <div className="mt-4 text-center border-t border-gray-700 pt-4">
+            <h4 className="text-lg font-semibold text-gray-300">Model Accuracy</h4>
+            <p className="text-3xl font-bold text-cyan-400 mt-1">{accuracy}%</p>
+          </div>
+        )}
+      </div>
     );
+  };
 
   const renderPredictionTab = () => {
     if (!predictionResult)

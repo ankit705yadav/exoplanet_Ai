@@ -32,16 +32,59 @@ except FileNotFoundError as e:
 
 @app.route('/analyze', methods=['POST'])
 def analyze_disposition():
-    # This function remains unchanged
     print("\n--- Received new analysis request ---")
+    if not models or not scaler: return jsonify({'error': 'Server not ready.'}), 503
+
+    model_name = request.form.get('model_name', 'RandomForest')
+    model = models.get(model_name)
+    if not model: return jsonify({'error': f"Model '{model_name}' not found."}), 404
+
     file = request.files.get('file')
     if not file: return jsonify({'error': 'No file provided'}), 400
     try:
         df = pd.read_csv(io.StringIO(file.stream.read().decode("UTF8")))
-        if 'koi_disposition' not in df.columns: return jsonify({'error': "CSV must contain 'koi_disposition' column."}), 400
-        counts = df['koi_disposition'].value_counts(normalize=True)
-        percentages = (counts * 100).round(2).to_dict()
-        return jsonify(percentages)
+
+        # Raw disposition distribution (if available)
+        raw_distribution = {}
+        if 'koi_disposition' in df.columns:
+            counts = df['koi_disposition'].value_counts(normalize=True)
+            raw_distribution = (counts * 100).round(2).to_dict()
+
+        # Model-based predictions
+        required_features = ['koi_period', 'koi_duration', 'koi_depth', 'koi_insol', 'koi_prad']
+        valid_indices = df.dropna(subset=required_features).index
+
+        if valid_indices.empty:
+            return jsonify({'error': 'No valid rows for prediction.'}), 400
+
+        features_data = df.loc[valid_indices, required_features]
+        scaled_features = scaler.transform(features_data)
+        predictions = model.predict(scaled_features)
+
+        # Calculate model prediction distribution
+        exoplanet_count = int(np.sum(predictions))
+        total = len(predictions)
+        no_exoplanet_count = total - exoplanet_count
+
+        model_distribution = {
+            'CONFIRMED': round((exoplanet_count / total) * 100, 2) if total > 0 else 0,
+            'FALSE POSITIVE': round((no_exoplanet_count / total) * 100, 2) if total > 0 else 0
+        }
+
+        # Calculate accuracy if ground truth available
+        accuracy = None
+        if 'koi_disposition' in df.columns:
+            true_labels = (df.loc[valid_indices, 'koi_disposition'] == 'CONFIRMED').astype(int)
+            from sklearn.metrics import accuracy_score
+            accuracy = round(accuracy_score(true_labels, predictions) * 100, 2)
+
+        return jsonify({
+            'model_used': model_name,
+            'raw_distribution': raw_distribution,
+            'model_distribution': model_distribution,
+            'total_analyzed': total,
+            'accuracy': accuracy
+        })
     except Exception as e: return jsonify({'error': f'Analysis error: {str(e)}'}), 500
 
 @app.route('/predict', methods=['POST'])
